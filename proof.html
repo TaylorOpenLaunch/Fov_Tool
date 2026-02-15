@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FOV vs Distance Visualizer (Stop Sign @ Known Size)</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --panel: #121826;
+      --panel2: #0f1522;
+      --text: #e7eefc;
+      --muted: #a9b4cc;
+      --accent: #6aa6ff;
+      --good: #5bd6a6;
+      --warn: #ffd166;
+      --bad: #ff6b6b;
+      --grid: rgba(255,255,255,0.06);
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1000px 600px at 25% 0%, #182448 0%, var(--bg) 45%) fixed;
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 18px;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 16px;
+      box-sizing: border-box;
+    }
+    @media (max-width: 980px) {
+      .wrap { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    header.card-h {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0));
+    }
+    header.card-h h1 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+      font-weight: 650;
+    }
+    header.card-h p {
+      margin: 6px 0 0;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .controls { padding: 14px 16px 16px; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .row label {
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .row .val {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      font-size: 12.5px;
+      color: var(--text);
+    }
+    input[type="range"] { width: 100%; }
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .field {
+      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 12px;
+      padding: 10px;
+    }
+    .field .k { font-size: 12px; color: var(--muted); }
+    .field .v { margin-top: 4px; font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+    .field .s { margin-top: 2px; font-size: 12px; color: var(--muted); }
+
+    .note {
+      padding: 12px 16px 16px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      background: rgba(0,0,0,0.14);
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .note code {
+      background: rgba(255,255,255,0.08);
+      padding: 1px 5px;
+      border-radius: 6px;
+      color: var(--text);
+    }
+
+    .stage {
+      position: relative;
+      background: linear-gradient(180deg, #eaf3ff 0%, #ffffff 38%, #3f8f3f 38%, #2f6f2f 100%);
+      aspect-ratio: 16 / 9;
+      width: 100%;
+    }
+
+    canvas { display: block; width: 100%; height: 100%; }
+
+    .overlay {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      right: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      pointer-events: none;
+    }
+    .pill {
+      pointer-events: none;
+      background: rgba(0,0,0,0.45);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: white;
+      padding: 8px 10px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      font-variant-numeric: tabular-nums;
+      backdrop-filter: blur(6px);
+    }
+    .pill b { font-weight: 700; }
+    .legend {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      right: 12px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .legend .pill { opacity: 0.95; }
+    .warnText { color: #ffe8a3; }
+    .okText { color: #c9ffe9; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <header class="card-h">
+        <h1>FOV vs Distance Visualizer</h1>
+        <p>
+          This tool draws a <b>standard 30-inch stop sign</b> at a user-set distance using true angular geometry.
+          Change the <b>horizontal FOV</b> and <b>yardage</b> to see how “wide” cameras make the target look smaller.
+        </p>
+      </header>
+
+      <div class="controls">
+        <div class="row">
+          <label for="fov">Horizontal FOV (degrees)</label>
+          <div class="val"><span id="fovVal">55</span>°</div>
+          <input id="fov" type="range" min="20" max="120" step="1" value="55" />
+        </div>
+
+        <div class="row">
+          <label for="yards">Distance (yards)</label>
+          <div class="val"><span id="yardsVal">152</span> yd</div>
+          <input id="yards" type="range" min="10" max="350" step="1" value="152" />
+        </div>
+
+        <div class="row">
+          <label for="screenW">Virtual panel width (px)</label>
+          <div class="val"><span id="pxWVal">1920</span> px</div>
+          <input id="screenW" type="range" min="640" max="3840" step="10" value="1920" />
+        </div>
+
+        <div class="row">
+          <label for="signIn">Stop sign width (inches)</label>
+          <div class="val"><span id="signInVal">30</span> in</div>
+          <input id="signIn" type="range" min="18" max="48" step="1" value="30" />
+        </div>
+
+        <div class="two">
+          <div class="field">
+            <div class="k">Angular width of sign</div>
+            <div class="v"><span id="thetaDeg">0.314</span>°</div>
+            <div class="s"><span id="thetaArcMin">18.8</span> arcmin</div>
+          </div>
+          <div class="field">
+            <div class="k">Sign width on screen</div>
+            <div class="v"><span id="pxSign">3.66</span> px</div>
+            <div class="s">at current FOV + distance</div>
+          </div>
+        </div>
+
+        <div class="two" style="margin-top:10px;">
+          <div class="field">
+            <div class="k">“Human-ish” desktop FOV ballpark</div>
+            <div class="v">~ 45–60°</div>
+            <div class="s">depends on screen size + viewing distance</div>
+          </div>
+          <div class="field">
+            <div class="k">Game wide angle ballpark</div>
+            <div class="v">~ 80–100°</div>
+            <div class="s">often feels “farther”</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        Math used:
+        <br/>
+        <code>theta = 2 * atan((W/2) / D)</code> and <code>px = panelWidth * (theta / FOV)</code>
+        <br/>
+        Where <code>W</code> is sign width (ft), <code>D</code> is distance (ft), and angles are converted to degrees.
+        <br/><br/>
+        Tip: if the sign is only a few pixels wide, that’s expected at 150+ yards.
+        20/20 vision affects what you can resolve, not the geometry.
+      </div>
+    </div>
+
+    <div class="card">
+      <header class="card-h">
+        <h1>Preview (1920×1080 geometry, scalable)</h1>
+        <p>
+          The stop sign is drawn to exact pixel width for the chosen FOV and distance.
+          The background is just a neutral “sky + grass” so you can focus on proportions.
+        </p>
+      </header>
+
+      <div class="stage">
+        <canvas id="c" width="1920" height="1080"></canvas>
+
+        <div class="overlay">
+          <div class="pill"><b>FOV:</b> <span id="pillFov">55</span>°</div>
+          <div class="pill"><b>Distance:</b> <span id="pillYd">152</span> yd</div>
+          <div class="pill"><b>Sign:</b> <span id="pillIn">30</span> in</div>
+          <div class="pill"><b>Sign px:</b> <span id="pillPx">3.66</span> px</div>
+          <div class="pill"><b>θ:</b> <span id="pillTheta">0.314</span>°</div>
+        </div>
+
+        <div class="legend">
+          <div class="pill">
+            <b>Interpretation:</b>
+            Wide FOV (game-like) makes the sign take fewer pixels, so it <span class="warnText">looks farther</span>.
+            Narrower FOV makes it take more pixels, so it <span class="okText">looks closer</span>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  // --- DOM
+  const el = (id) => document.getElementById(id);
+  const fov = el("fov");
+  const yards = el("yards");
+  const screenW = el("screenW");
+  const signIn = el("signIn");
+
+  const fovVal = el("fovVal");
+  const yardsVal = el("yardsVal");
+  const pxWVal = el("pxWVal");
+  const signInVal = el("signInVal");
+
+  const thetaDegEl = el("thetaDeg");
+  const thetaArcMinEl = el("thetaArcMin");
+  const pxSignEl = el("pxSign");
+
+  const pillFov = el("pillFov");
+  const pillYd = el("pillYd");
+  const pillIn = el("pillIn");
+  const pillPx = el("pillPx");
+  const pillTheta = el("pillTheta");
+
+  const canvas = el("c");
+  const ctx = canvas.getContext("2d");
+
+  // --- Constants
+  // Standard 16:9 canvas height, we keep canvas height 1080 and vary width scaling logically.
+  // We will still render to 1920x1080 pixels, but "panel width" for math is user-selected.
+  // We'll treat "panel width" as the effective horizontal pixel span for the camera FOV.
+  // The canvas always stays 1920x1080; we scale the math by panel width, and draw centered.
+
+  // --- Helpers
+  const degToRad = (d) => d * Math.PI / 180;
+  const radToDeg = (r) => r * 180 / Math.PI;
+
+  function computeThetaDeg(signWidthInches, distanceYards) {
+    const Wft = signWidthInches / 12.0;      // inches -> feet
+    const Dft = distanceYards * 3.0;         // yards -> feet
+    const half = Wft / 2.0;
+    const thetaRad = 2.0 * Math.atan(half / Dft);
+    return radToDeg(thetaRad);
+  }
+
+  function computePxWidth(panelWidthPx, thetaDeg, fovDeg) {
+    // Exact proportional mapping using degrees in same unit.
+    return panelWidthPx * (thetaDeg / fovDeg);
+  }
+
+  // Draw a regular octagon "STOP sign" with exact outer width pxW (vertex-to-vertex).
+  function drawStopSign(cx, cy, pxW) {
+    // If it's tiny, we still draw it, but keep it crisp.
+    const r = pxW / 2.0; // radius to vertices
+    const angle0 = degToRad(22.5); // rotate so flat top-ish like a stop sign
+    const pts = [];
+    for (let i = 0; i < 8; i++) {
+      const a = angle0 + i * (Math.PI / 4);
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+
+    // Pole
+    const poleW = Math.max(2, Math.round(pxW * 0.18));
+    const poleH = 160;
+    ctx.fillStyle = "#9aa0a6";
+    ctx.fillRect(cx - poleW/2, cy + r + 4, poleW, poleH);
+
+    // Shadow on grass
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.ellipse(cx + r*1.4, cy + r + poleH*0.7, Math.max(6, pxW*1.2), Math.max(2, pxW*0.22), -0.2, 0, Math.PI*2);
+    ctx.fill();
+
+    // Octagon
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+    ctx.fillStyle = "#c62828";
+    ctx.fill();
+
+    // Border
+    ctx.lineWidth = Math.max(1, pxW * 0.08);
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
+
+    // Text: only draw if it's large enough to not lie visually
+    // (If we draw "STOP" when it's 3px wide, we'd be faking it.)
+    if (pxW >= 80) {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `${Math.round(pxW * 0.28)}px Arial Black, Arial, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("STOP", cx, cy);
+    }
+  }
+
+  function drawScene(panelWidthPx, fovDeg, distanceYd, signWidthInches) {
+    // Clear
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background (simple sky/grass)
+    // sky
+    const skyH = 420;
+    ctx.fillStyle = "#eaf3ff";
+    ctx.fillRect(0, 0, canvas.width, skyH);
+    // subtle gradient haze
+    const g1 = ctx.createLinearGradient(0, 0, 0, skyH);
+    g1.addColorStop(0, "rgba(120,170,255,0.10)");
+    g1.addColorStop(1, "rgba(255,255,255,0.00)");
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, canvas.width, skyH);
+
+    // grass
+    ctx.fillStyle = "#3f8f3f";
+    ctx.fillRect(0, skyH, canvas.width, canvas.height - skyH);
+    const g2 = ctx.createLinearGradient(0, skyH, 0, canvas.height);
+    g2.addColorStop(0, "rgba(0,0,0,0.00)");
+    g2.addColorStop(1, "rgba(0,0,0,0.22)");
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, skyH, canvas.width, canvas.height - skyH);
+
+    // horizon line
+    ctx.strokeStyle = "rgba(0,0,0,0.18)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, skyH);
+    ctx.lineTo(canvas.width, skyH);
+    ctx.stroke();
+
+    // Compute math
+    const thetaDeg = computeThetaDeg(signWidthInches, distanceYd);
+    const pxW = computePxWidth(panelWidthPx, thetaDeg, fovDeg);
+
+    // Place sign near center, slightly above grass midline
+    const cx = canvas.width / 2;
+    const cy = skyH + 170;
+
+    // Draw a subtle center guide
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    ctx.moveTo(cx, 0);
+    ctx.lineTo(cx, canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw sign
+    drawStopSign(cx, cy, pxW);
+
+    // Draw pixel ruler for the sign width if it's at least ~2 px
+    if (pxW >= 2) {
+      const left = cx - pxW/2;
+      const right = cx + pxW/2;
+      const y = cy - (pxW/2) - 18;
+
+      ctx.strokeStyle = "rgba(0,0,0,0.65)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+      ctx.stroke();
+
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(left, y-8);
+      ctx.lineTo(left, y+8);
+      ctx.moveTo(right, y-8);
+      ctx.lineTo(right, y+8);
+      ctx.stroke();
+    }
+
+    return { thetaDeg, pxW };
+  }
+
+  function fmt(n, d=2) {
+    return Number(n).toFixed(d);
+  }
+
+  function update() {
+    const fovDeg = Number(fov.value);
+    const distanceYd = Number(yards.value);
+    const panelWidthPx = Number(screenW.value);
+    const signWidthInches = Number(signIn.value);
+
+    fovVal.textContent = fovDeg;
+    yardsVal.textContent = distanceYd;
+    pxWVal.textContent = panelWidthPx;
+    signInVal.textContent = signWidthInches;
+
+    const { thetaDeg, pxW } = drawScene(panelWidthPx, fovDeg, distanceYd, signWidthInches);
+
+    const arcMin = thetaDeg * 60;
+
+    thetaDegEl.textContent = fmt(thetaDeg, 3);
+    thetaArcMinEl.textContent = fmt(arcMin, 1);
+    pxSignEl.textContent = fmt(pxW, 2);
+
+    pillFov.textContent = fovDeg;
+    pillYd.textContent = distanceYd;
+    pillIn.textContent = signWidthInches;
+    pillPx.textContent = fmt(pxW, 2);
+    pillTheta.textContent = fmt(thetaDeg, 3);
+  }
+
+  // Initialize
+  [fov, yards, screenW, signIn].forEach(x => x.addEventListener("input", update));
+  update();
+
+  // Optional: keyboard nudges
+  window.addEventListener("keydown", (e) => {
+    const step = (id, delta) => {
+      const r = el(id);
+      r.value = Math.min(Number(r.max), Math.max(Number(r.min), Number(r.value) + delta));
+      update();
+    };
+    if (e.key === "ArrowLeft") step("fov", -1);
+    if (e.key === "ArrowRight") step("fov", 1);
+    if (e.key === "ArrowUp") step("yards", 1);
+    if (e.key === "ArrowDown") step("yards", -1);
+  });
+</script>
+</body>
+</html>
